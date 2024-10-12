@@ -3,159 +3,44 @@
 
 set -Eeuo pipefail
 
-usage() {
-  echo "usage: ${0} [-d|--download] [<extension-name>]
-                    [-i|--install]  <extension-name>|<dir>
-                    [-h|--help]" >&2
-  echo >&2
-  echo "optional environment variable: VSIX_DOWNLOAD_DIR; dirctory to store vsix files" >&2
-  echo "optional environment variable: VSIX_PLATFORMS; space-separated list of platforms to download" >&2
-  echo "optional environment variable: DEBUG; set to 'true' to echo commands" >&2
-  echo >&2
-  echo "download: downloads the vsix file for the given extension name if supplied; or the vsix files" >&2
-  echo "  for all the extensions that are already installed." >&2
-  echo >&2
-  echo "example: " >&2
-  echo "> $0 -r internal-artifacts -i controlplane-main" >&2
-  echo "" >&2
-  exit 1
-}
-
 THIS_SCRIPT_DIR=$(cd "$(dirname ${BASH_SOURCE[0]})"; pwd)
-VSIX_DOWNLOAD_DIR="${VSIX_DOWNLOAD_DIR:-${THIS_SCRIPT_DIR}/downloads}}"
-VSIX_PLATFORMS="${VSIX_PLATFORMS:-}"
-DEBUG="${DEBUG:-false}"
-if [[ "${DEBUG}" == "true" ]]; then
-  SET_DEBUG="-x"
-else
-  SET_DEBUG="+x"
-fi
-set ${SET_DEBUG}
+source "${THIS_SCRIPT_DIR}/vsix-helpers.sh"
 
-function debug() {
-  [[ "${DEBUG}" == "true" ]]
-}
+usage() {
+  echo "
+usage: ${0} download <extension> [<extension...]|installed
+            install  <extension> [<extension...]|<dir>
+            [-f|--force]
+            [-h|--help]
 
-function dryrun() {
-  [[ "${DRY_RUN}" == "true" ]]
-}
+download: fetches the .vsix file for the given <extensions>. If <extensions> is 'installed', then
+  the .vsix file for all currently-installed extensions will be downloaded. If the extension has
+  dependencies, the .vsix files for those extensions will be downloaded as well.
 
-function vsixPlatform() {
-  local path="${1}"
-  local arch="$(uname -s)-$(uname -m)"
-  arch=$(echo "${arch}" | tr '[:upper:]' '[:lower:]')
-  arch="${arch/x86_64/x64}"
-  if [[ -z "${path}" ]]; then
-    echo "${arch}"
-    return 0
-  fi
+install: installs the given <extensions> using the VS Code CLI. If the argument is a directory,
+  then each .vsix file in the directory will be installed. If an extension has any dependencies,
+  those extensions will be installed first.
 
-  case "${path}" in
-    *darwin*|*Darwin*)
-      arch="darwin"
-      ;;
-    *linux*|*Linux*)
-      arch="linux"
-      ;;
-  esac
-  case "${path}" in
-    *arm64*)
-      arch="${arch}-arm64"
-      ;;
-    *x64*)
-      arch="${arch}-x64"
-      ;;
-  esac
-  echo "${arch}"
-}
+<extension>; the name of the extension to download and/or install. The name may optionally include
+  the version number and platform; e.g. 'ms-python.python-2024.17.2024100801@$(vsixPlatform)'.
+  The version number and platform default to latest@$(vsixPlatform).
 
-function vsixPlatformMatches() {
-  local path="${1}"
-  local thisArch=$(vsixPlatform)
-  local pathArch=$(vsixPlatform "${path}")
-  [[ "${thisArch}" == "${pathArch}" ]]
-}
+Flag                            Purpose
+-f|--force                      Optional; if provided, any existing .vsix file will be overwritten
 
-function downloadExtension() {
-  local outputDir="${VSIX_DOWNLOAD_DIR}"
-  local extension="${1}"
-  local force="${2}"
-  local publisher=$(cut -d '.' -f 1 <<< "${extension}")
-  local package=$(cut -d '.' -f 2- <<< "${extension}" | cut -d '@' -f 1)
-  local version=$(cut -d '@' -f 2- <<< "${extension}")
-  local platform="${3}"
-  local url="https://${publisher}.gallery.vsassets.io/_apis/public/gallery/publisher/${publisher}/extension/${package}/${version:-latest}/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage"
-  local outputFilename="${publisher}.${package}-${version}.vsix"
-  local outputPath="${outputDir}/${outputFilename}"
-  if [[ -f "${outputPath}" && "${force}" != "TRUE" ]]; then
-    echo "skipping download of existing file: ${outputFilename}"
-  fi
-  mkdir -p "${outputDir}"
-  if [[ -n "${platform}" ]]; then
-    url="${url}?targetPlatform=${platform}"
-    outputPath="${outputPath/.vsix/@${platform}.vsix}"
-  fi
-  if debug; then
-    echo "extension: ${extension}; url: ${url}" >&2
-  fi
-  echo "downloading: ${extension} to ${outputPath}"
-  local statusCode=$(curl -s --write-out '%{http_code}' --output "${outputPath}" "${url}")
-  if [[ "${statusCode}" != "200" ]]; then
-    echo "error downloading ${extension}; status code: ${statusCode}" >&2
-    return
-  fi
-  if [[ -n "${platform}" ]]; then
-    return
-  fi
-  local manifest="$(unzip -p ${outputPath} extension.vsixmanifest)"
-  local manifestTargetPlatform="$(xq -r '.PackageManifest.Metadata.Identity.["@TargetPlatform"]' <<< ${manifest} )"
-  if [[ "${manifestTargetPlatform}" == "null" ]]; then
-    return
-  fi
-  local newOutputPath="${outputPath/.vsix/@${manifestTargetPlatform}.vsix}"
-  echo "renaming platform-specific extension to ${newOutputPath}"
-  mv "${outputPath}" "${newOutputPath}"
-  read -r -a platforms <<< "${VSIX_PLATFORMS}"
-  for p in "${platforms[@]}"; do
-    downloadExtension "${extension}" "${force}" "${p}"
-  done
-}
+Environment variable            Purpose
+VSIX_DOWNLOAD_DIR               Optional; dirctory in which to store .vsix files; defaults to '${VSIX_DOWNLOAD_DIR}'
+VSIX_PLATFORMS                  Optional; space-separated list of target platforms to download; defaults to '${VSIX_PLATFORMS}'
+DEBUG                           Optional; set to 'true' to echo commands
 
-function downloadInstalledExtensions() {
-  local force="${1}"
-  IFS=$'\n' read -r -d '' -a extensions < <( code --list-extensions --show-versions )
-  
-  for e in "${extensions[@]}"; do
-    downloadExtension "${e}" "${force}"
-  done
-}
+" >&2
 
-function vsixInstallFromPath() {
-  local path="${1}"
-  if dryrun; then
-    echo "code --verbose --install-extension ${path}" >&2
-    return
-  fi
-  (trap 'echo "aborting install"; exit' SIGINT; code --verbose --install-extension "${path}")
-}
-
-function vsixInstallFromDir() {
-  local dir="${1:-$(pwd)}"
-
-  for path in $(find "${dir}" -name '*.vsix'); do
-    if [[ "${path}" =~ .*pack.* ]]; then
-      echo "skipping install of pack extension: $(basename ${path})" >&2
-      continue
-    fi
-    if vsixPlatformMatches "${path}" ; then
-      vsixInstallFromPath "${path}"
-    fi
-  done
+    exit 1
 }
 
 command=""
-extension=""
-force="FALSE"
+extensions=()
+force="false"
 while [[ $# -gt 0 ]]
 do
   key="${1}"
@@ -164,43 +49,51 @@ do
       -h|--help)
         usage
       ;;
-      -d|--download)
+      download)
         command="download"
-        extension="${2}"
         shift # past key
-        shift # past value
       ;;
-      -i|--install)
+      install)
         command="install"
-        extension="${2}"
         shift # past key
-        shift # past value
       ;;
       -f|--force)
-        force="TRUE"
+        force="true"
         shift # past key
       ;;
-      *)    # unknown option
-        usage
+      *)      
+        extensions+=("${key}")
+        shift # past key
       ;;
   esac
 done
 
-case ${command} in
-  download)
-    if [[ -n "${extension}" || "${extension}" == "installed" ]]; then
-      downloadInstalledExtensions "${force}"
-    else
-      downloadExtension "${extension}" "${force}"
-    fi
-  ;;
-  install)
-    extension="${extension:-${VSCODE_EXTENSION_DOWNLOAD_DIR}}"
-    if [[ -d "${extension}" ]]; then
-      vsixInstallFromDir "${extension}"
-    else
-      vsixInstallFromPath "${extension}"
-    fi
-  ;;
+if [[ -z "${command}" ]]; then
+  echo "no value provided for <command>" >&2
+  exit
+fi
 
-esac
+if [[ -z "${extensions[@]}" ]]; then
+  echo "no values provided for <extensions>" >&2
+  exit
+fi
+
+for extension in "${extensions[@]}"; do
+  case ${command} in
+    download)
+      if [[ "${extension}" == "installed" ]]; then
+        downloadInstalledExtensions "${force}"
+      else
+        downloadExtension "${extension}" "${force}"
+      fi
+    ;;
+    install)
+      extension="${extension:-${VSIX_DOWNLOAD_DIR}}"
+      if [[ -d "${extension}" ]]; then
+        vsixInstallFromDir "${extension}"
+      else
+        vsixInstallFromPath "${extension}"
+      fi
+    ;;
+  esac
+done
