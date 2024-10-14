@@ -60,15 +60,15 @@ function getExtensionInfo() {
     return
   fi
   if [[ "${extension}" =~ ${dashVersionNoArchRegex} ]]; then
-    echo "${BASH_REMATCH[*]:1}" "$(vsixPlatform)"
+    echo "${BASH_REMATCH[*]:1}"
     return
   fi
   if [[ "${extension}" =~ ${atVersionNoArchRegex} ]]; then
-    echo "${BASH_REMATCH[*]:1}" "$(vsixPlatform)"
+    echo "${BASH_REMATCH[*]:1}"
     return
   fi
   if [[ "${extension}" =~ ${noVersionNoArchRegex} ]]; then
-    echo "${BASH_REMATCH[*]:1}" "latest" "$(vsixPlatform)"
+    echo "${BASH_REMATCH[*]:1}" "latest"
     return
   fi
 }
