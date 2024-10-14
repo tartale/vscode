@@ -107,7 +107,7 @@ function downloadExtension() {
     return
   fi
   local manifest="$(unzip -p ${outputPath} extension.vsixmanifest)"
-  local manifestTargetPlatform="$(xq -r '.PackageManifest.Metadata.Identity.["@TargetPlatform"]' <<< ${manifest} )"
+  local manifestTargetPlatform="$(xq -a '.PackageManifest.Metadata.Identity.["@TargetPlatform"]' <<< ${manifest} )"
   if [[ "${manifestTargetPlatform}" == "null" ]]; then
     return
   fi
