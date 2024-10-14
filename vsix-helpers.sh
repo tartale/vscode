@@ -51,28 +51,26 @@ function vsixPlatformMatches() {
 
 function getExtensionInfo() {
   local extension="${1}"
-  if ! [[ "${extension}" =~ .*\..* ]]; then
-    echo "expected format for extension: publisher.package[-version][@platform]" >&2
-    echo "got: ${extension}" >&2
-    return 1    
+  local fullyQualifiedRegex="(.*)\.(.*)-([0-9]+.*)@(.*)"
+  local dashVersionNoArchRegex="(.*)\.(.*)-([0-9.]+)"
+  local atVersionNoArchRegex="(.*)\.(.*)@([0-9.]+)"
+  local noVersionNoArchRegex="(.*)\.(.*)"
+  if [[ "${extension}" =~ ${fullyQualifiedRegex} ]]; then
+    echo "${BASH_REMATCH[*]:1}"
+    return
   fi
-  local name=$(echo "${extension#*.}")
-  local publisher=$(echo "${extension%%.*}")
-  local package=$(echo "${name}")
-  local version="latest"
-  local platform="$(vsixPlatform)"
-  local format="(.*)-([0-9]+.*)"
-  if [[ "${name}" =~ ${format} ]]; then
-    package="${BASH_REMATCH[1]}"
-    version="${BASH_REMATCH[2]}"
-    format="(.*)@(.*)"
-    if [[ "${version}" =~ ${format} ]]; then
-      version="${BASH_REMATCH[1]}"
-      platform="${BASH_REMATCH[2]}"
-    fi
+  if [[ "${extension}" =~ ${dashVersionNoArchRegex} ]]; then
+    echo "${BASH_REMATCH[*]:1}" "${platform}"
+    return
   fi
-
-  echo "${publisher}" "${package}" "${version}" "${platform}"
+  if [[ "${extension}" =~ ${atVersionNoArchRegex} ]]; then
+    echo "${BASH_REMATCH[*]:1}" "${platform}"
+    return
+  fi
+  if [[ "${extension}" =~ ${noVersionNoArchRegex} ]]; then
+    echo "${BASH_REMATCH[*]:1}" "latest" "${platform}"
+    return
+  fi
 }
 
 function downloadExtension() {

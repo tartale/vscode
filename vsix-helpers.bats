@@ -34,8 +34,18 @@ setup() {
     assert_equal "${output}" "publisher package-package 0.0.1 ${platform}"
 }
 
+@test 'getExtensionInfo, publisher.package-package@0.0.1' {
+    platform=$(vsixPlatform)
+    output="$(getExtensionInfo publisher.package-package@0.0.1)"
+    assert_equal "${output}" "publisher package-package 0.0.1 ${platform}"
+}
+
 @test 'getExtensionInfo, publisher.package-package-0.0.1@platform' {
     platform=$(vsixPlatform)
     output="$(getExtensionInfo publisher.package-package-0.0.1@platform)"
     assert_equal "${output}" "publisher package-package 0.0.1 platform"
+}
+
+@test 'getExtensionInfo, publisher' {
+    refute [ getExtensionInfo publisher ]
 }
