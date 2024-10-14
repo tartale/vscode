@@ -51,23 +51,25 @@ function vsixPlatformMatches() {
 
 function getExtensionInfo() {
   local extension="${1}"
-  if [[ ! "${extension}" =~ .*\..* ]]; then
+  if ! [[ "${extension}" =~ .*\..* ]]; then
     echo "expected format for extension: publisher.package[-version][@platform]" >&2
     echo "got: ${extension}" >&2
     return 1    
   fi
-  local name=$(echo "${extension%-*}")
-  local publisher=$(echo "${name%.*}")
-  local package=$(echo "${name##*.}")
-
+  local name=$(echo "${extension#*.}")
+  local publisher=$(echo "${extension%%.*}")
+  local package=$(echo "${name}")
   local version="latest"
-  if [[ "${extension}" =~ .*-.* ]]; then
-    local info=$(echo "${extension##*-}")
-    version=$(echo "${info%@*}")
-  fi
-  local platform=""
-  if [[ "${extension}" =~ .*@(.*) ]]; then
-    platform="${BASH_REMATCH[1]}"
+  local platform="$(vsixPlatform)"
+  local format="(.*)-([0-9]+.*)"
+  if [[ "${name}" =~ ${format} ]]; then
+    package="${BASH_REMATCH[1]}"
+    version="${BASH_REMATCH[2]}"
+    format="(.*)@(.*)"
+    if [[ "${version}" =~ ${format} ]]; then
+      version="${BASH_REMATCH[1]}"
+      platform="${BASH_REMATCH[2]}"
+    fi
   fi
 
   echo "${publisher}" "${package}" "${version}" "${platform}"
@@ -122,7 +124,8 @@ function downloadExtension() {
 
 function downloadInstalledExtensions() {
   local force="${1}"
-  IFS=$'\n' read -r -d '' -a extensions < <( code --list-extensions --show-versions )
+  local extensions
+  IFS=$'\n' read -r -d '' -a extensions < <( code --list-extensions --show-versions && printf "\0" )
   
   for e in "${extensions[@]}"; do
     downloadExtension "${e}" "${force}"

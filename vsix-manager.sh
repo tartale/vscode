@@ -73,7 +73,7 @@ if [[ -z "${command}" ]]; then
   exit
 fi
 
-if [[ -z "${extensions[@]}" ]]; then
+if [[ "${#extensions[@]}" == 0 ]]; then
   echo "no values provided for <extensions>" >&2
   exit
 fi
