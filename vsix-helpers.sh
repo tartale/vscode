@@ -77,6 +77,7 @@ function downloadExtension() {
   local outputDir="${VSIX_DOWNLOAD_DIR}"
   local extension="${1}"
   local force="${2}"
+  local targetPlatformCheck="${3:-false}"
   local extensionInfo=$(getExtensionInfo "${extension}")
   if [[ -z "${extensionInfo}" ]]; then
     return 1
@@ -87,6 +88,7 @@ function downloadExtension() {
   local outputPath="${outputDir}/${outputFilename}"
   if [[ -f "${outputPath}" && "${force}" != "true" ]]; then
     echo "skipping download of existing file: ${outputFilename}"
+    return 0
   fi
   mkdir -p "${outputDir}"
   if [[ -n "${platform}" ]]; then
@@ -94,7 +96,7 @@ function downloadExtension() {
     outputPath="${outputPath/.vsix/@${platform}.vsix}"
   fi
   echo "downloading: ${extension} to ${outputPath}"
-  echo "  url: ${url}"
+  echo "---> url: ${url}"
   if dryrun; then
     return
   fi
@@ -103,12 +105,12 @@ function downloadExtension() {
     echo "error downloading ${extension}; status code: ${statusCode}" >&2
     return
   fi
-  if [[ -n "${platform}" ]]; then
+  if [[ -n "${platform}" || "${targetPlatformCheck}" != "true" ]]; then
     return
   fi
   local manifest="$(unzip -p ${outputPath} extension.vsixmanifest)"
-  local manifestTargetPlatform="$(xq -a '.PackageManifest.Metadata.Identity.["@TargetPlatform"]' <<< ${manifest} )"
-  if [[ "${manifestTargetPlatform}" == "null" ]]; then
+  local manifestTargetPlatform="$( xq -x '//PackageManifest/Metadata/Identity/@TargetPlatform' <<< ${manifest} )"
+  if [[ -z "${manifestTargetPlatform}" ]]; then
     return
   fi
   local newOutputPath="${outputPath/.vsix/@${manifestTargetPlatform}.vsix}"
@@ -116,7 +118,7 @@ function downloadExtension() {
   mv "${outputPath}" "${newOutputPath}"
   read -r -a platforms <<< "${VSIX_PLATFORMS}"
   for p in "${platforms[@]}"; do
-    downloadExtension "${extension}@${p}" "${force}"
+    downloadExtension "${extension}@${p}" "${force}" "false"
   done
 }
 
